@@ -1,0 +1,45 @@
+import copy
+from typing import List, Optional, Any
+
+
+def transform_tokens(token_stream: Optional[List[Any]]) -> List[Any]:
+    """Transform token stream, converting heading content to uppercase.
+    
+    :param token_stream: List of token objects, may be None or empty.
+    :return: Transformed list of tokens.
+    :raises TypeError: If token_stream is not a list or iterable.
+    """
+    # Bug 2 Fix: 空列表/None 输入验证
+    if token_stream is None:
+        return []
+    if not isinstance(token_stream, (list, tuple)):
+        raise TypeError(f"Expected list or tuple, got {type(token_stream).__name__}")
+    
+    result = []
+    
+    for i, token in enumerate(token_stream):
+        try:
+            # Bug 3 Fix: token.content 可能为 None 的安全检查
+            if token.type == 'heading':
+                new_token = copy.deepcopy(token)
+                if token.content is not None:
+                    new_token.content = token.content.upper()
+                else:
+                    new_token.content = ""
+            else:
+                # Bug 1 Fix: else 分支必须定义 new_token
+                new_token = token
+            
+            result.append(new_token)
+            
+        except AttributeError as e:
+            # Bug 4 Fix: 异常处理机制
+            raise RuntimeError(
+                f"Failed to transform token at index {i}: {e}"
+            ) from e
+        except Exception as e:
+            raise RuntimeError(
+                f"Unexpected error processing token at index {i}: {e}"
+            ) from e
+    
+    return result
