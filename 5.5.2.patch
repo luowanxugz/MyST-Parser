@@ -1,0 +1,132 @@
+diff --git a/tests/test_renderers/test_parse_directives.py b/tests/test_renderers/test_parse_directives.py
+index 36eba61..b509ba6 100644
+--- a/tests/test_renderers/test_parse_directives.py
++++ b/tests/test_renderers/test_parse_directives.py
+@@ -3,6 +3,7 @@ from pathlib import Path
+ 
+ import pytest
+ import yaml
++from docutils.parsers.rst import Directive
+ from docutils.parsers.rst.directives.admonitions import Admonition, Note
+ from docutils.parsers.rst.directives.body import Rubric
+ from markdown_it import MarkdownIt
+@@ -10,10 +11,26 @@ from sphinx.directives.code import CodeBlock
+ 
+ from myst_parser.parsers.directives import MarkupError, parse_directive_text
+ from myst_parser.parsers.options import TokenizeError, options_to_items
++from myst_parser.warnings_ import MystWarnings
+ 
+ FIXTURE_PATH = Path(__file__).parent.joinpath("fixtures")
+ 
+ 
++def _default_mode(value: str | None) -> str:
++    return "auto" if value is None else value
++
++
++class DefaultingDirective(Directive):
++    required_arguments = 0
++    optional_arguments = 0
++    final_argument_whitespace = False
++    has_content = True
++    option_spec = {"mode": _default_mode}
++
++    def run(self):
++        return []
++
++
+ @pytest.mark.param_file(FIXTURE_PATH / "option_parsing.yaml", "yaml")
+ def test_option_parsing(file_params):
+     """Test parsing of directive options."""
+@@ -93,28 +110,24 @@ def test_parsing_full_yaml():
+ 
+ def test_additional_options():
+     """Allow additional options to be passed to a directive."""
+-    # this should be fine
+     result = parse_directive_text(
+         Note, "", "content", additional_options={"class": "bar"}
+     )
+     assert not result.warnings
+     assert result.options == {"class": ["bar"]}
+     assert result.body == ["content"]
+-    # body on first line should also be fine
+     result = parse_directive_text(
+         Note, "content", "other", additional_options={"class": "bar"}
+     )
+     assert not result.warnings
+     assert result.options == {"class": ["bar"]}
+     assert result.body == ["content", "other"]
+-    # additional option should not take precedence
+     result = parse_directive_text(
+         Note, "content", ":class: foo", additional_options={"class": "bar"}
+     )
+     assert not result.warnings
+     assert result.options == {"class": ["foo"]}
+     assert result.body == ["content"]
+-    # this should warn about the unknown option
+     result = parse_directive_text(
+         Note, "", "content", additional_options={"foo": "bar"}
+     )
+@@ -122,8 +135,58 @@ def test_additional_options():
+     assert "Unknown option" in result.warnings[0].msg
+ 
+ 
+-def test_colon_options_stop_at_colon_fence():
+-    """Options parsing should stop when encountering a colon fence (3+ colons)."""
+-    result = parse_directive_text(Note, "", ":class: xxx\n::::{other}\ncontent\n::::")
+-    assert result.options == {"class": ["xxx"]}
+-    assert result.body == ["::::{other}", "content", "::::"]
++@pytest.mark.parametrize(
++    ("content", "expected_body"),
++    [
++        (":class: outer\n:::{note}\nbody\n:::", [":::{note}", "body", ":::"]),
++        (
++            ":class: outer\n::::{note}\nbody\n::::",
++            ["::::{note}", "body", "::::"],
++        ),
++        (
++            ":class: outer\n  :::{note}\nbody\n  :::",
++            ["  :::{note}", "body", "  :::"],
++        ),
++    ],
++)
++def test_colon_options_stop_at_colon_fence_variants(content, expected_body):
++    result = parse_directive_text(Note, "", content)
++    assert not result.warnings
++    assert result.options == {"class": ["outer"]}
++    assert result.body == expected_body
++    assert result.body_offset == 1
++
++
++def test_nested_colon_directive_option_block_has_inner_priority():
++    result = parse_directive_text(
++        Note,
++        "",
++        ":class: outer\n:::{note}\n:class: inner\ninner\n:::\nouter",
++    )
++    assert not result.warnings
++    assert result.options == {"class": ["outer"]}
++    assert result.body == [":::{note}", ":class: inner", "inner", ":::", "outer"]
++    assert result.body_offset == 1
++
++
++@pytest.mark.parametrize(
++    ("content", "expected_mode"),
++    [(":mode:\nbody", "auto"), (":mode: manual\nbody", "manual")],
++)
++def test_empty_option_value_default_handling(content, expected_mode):
++    result = parse_directive_text(DefaultingDirective, "", content)
++    assert not result.warnings
++    assert result.options == {"mode": expected_mode}
++    assert result.body == ["body"]
++    assert result.body_offset == 1
++
++
++def test_invalid_option_format_reports_line_and_preserves_body():
++    result = parse_directive_text(Note, "", ":class\n:::{note}\nbody\n:::", line=41)
++    assert result.options == {}
++    assert result.body == [":class", ":::{note}", "body", ":::"]
++    assert result.body_offset == 0
++    assert len(result.warnings) == 1
++    assert result.warnings[0].msg == "Invalid options format: expected ':' after key"
++    assert result.warnings[0].lineno == 41
++    assert result.warnings[0].type == MystWarnings.DIRECTIVE_OPTION
