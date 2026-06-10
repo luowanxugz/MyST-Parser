@@ -188,7 +188,7 @@ def _parse_directive_options(
             options_block = content
             content = ""
         options_block = dedent(options_block)
-    elif content.lstrip().startswith(":"):
+    elif content.lstrip().startswith(":") and not content.lstrip().startswith(":::"):
         content_lines = content.splitlines()
         yaml_lines = []
         while content_lines:
@@ -198,8 +198,9 @@ def _parse_directive_options(
             if not stripped.startswith(":") or stripped.startswith(":::"):
                 break
             yaml_lines.append(content_lines.pop(0).lstrip()[1:])
-        options_block = "\n".join(yaml_lines)
-        content = "\n".join(content_lines)
+        if yaml_lines:
+            options_block = "\n".join(yaml_lines)
+            content = "\n".join(content_lines)
 
     has_options_block = options_block is not None
 
