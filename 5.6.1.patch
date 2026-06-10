@@ -1,0 +1,41 @@
+--- a/transform_tokens.py
++++ b/transform_tokens.py
+@@ -1,14 +1,41 @@
++import copy
++from typing import Any, Iterable, List
++
++
+ def transform_tokens(token_stream):
+     result = []
+     for i, token in enumerate(token_stream):
+         if token.type == 'heading':
+             new_token = copy.deepcopy(token)
+             new_token.content = token.content.upper()
++        # Bug 1: new_token 在非 heading 分支未定义 -> NameError
++        # Bug 2: token_stream 为 None 或空时 -> TypeError
++        # Bug 3: token.content 为 None 时 -> AttributeError
++        # Bug 4: 单个 token 异常会终止整个流
+         result.append(new_token)
+     return result
++
++
++def transform_tokens_fixed(token_stream: Iterable[Any]) -> List[Any]:
++    if token_stream is None:
++        return []
++    result: List[Any] = []
++    for token in token_stream:
++        try:
++            if token is None:
++                continue
++            if getattr(token, 'type', None) == 'heading':
++                new_token = copy.deepcopy(token)
++                content = getattr(new_token, 'content', None)
++                new_token.content = content.upper() if content is not None else content
++                result.append(new_token)
++            else:
++                result.append(token)
++        except Exception as exc:
++            print(f"[transform_tokens] skipped token due to error: {exc!r}")
++            if token is not None:
++                result.append(token)
++    return result
