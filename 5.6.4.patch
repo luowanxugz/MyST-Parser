@@ -1,0 +1,67 @@
+diff --git a/myst_parser/parsers/transform.py b/myst_parser/parsers/transform.py
+new file mode 100644
+index 0000000..a1b2c3d
+--- /dev/null
++++ b/myst_parser/parsers/transform.py
+@@ -0,0 +1,44 @@
++from __future__ import annotations
++
++import copy
++import logging
++from typing import List, Optional, Sequence
++
++from markdown_it.token import Token
++
++logger = logging.getLogger(__name__)
++
++
++def transform_tokens(token_stream: Optional[Sequence[Token]]) -> List[Token]:
++    """Transform a token stream by uppercasing heading content.
++
++    :param token_stream: A sequence of markdown-it tokens, or None.
++    :return: A new list of transformed tokens.
++    :raises ValueError: If token_stream is None.
++    """
++    if token_stream is None:
++        raise ValueError("token_stream must not be None")
++
++    result: List[Token] = []
++
++    for token in token_stream:
++        try:
++            if token.type == "heading":
++                new_token = copy.deepcopy(token)
++                if new_token.content is not None:
++                    new_token.content = new_token.content.upper()
++                else:
++                    logger.warning(
++                        "Heading token at line %s has no content, skipping upper",
++                        getattr(token, "map", [None])[0],
++                    )
++            else:
++                new_token = copy.deepcopy(token)
++            result.append(new_token)
++        except Exception:
++            logger.exception(
++                "Failed to transform token type=%s, appending original",
++                getattr(token, "type", "unknown"),
++            )
++            result.append(copy.deepcopy(token))
++
++    return result
+diff --git a/myst_parser/parsers/transform_buggy.py b/myst_parser/parsers/transform_buggy.py
+new file mode 100644
+index 0000000..e5f6g7h
+--- /dev/null
++++ b/myst_parser/parsers/transform_buggy.py
+@@ -0,0 +1,9 @@
++# Original buggy version (for reference)
++
++def transform_tokens(token_stream):
++    result = []
++    for i, token in enumerate(token_stream):
++        if token.type == 'heading':
++            new_token = copy.deepcopy(token)
++            new_token.content = token.content.upper()
++        result.append(new_token)
++    return result
