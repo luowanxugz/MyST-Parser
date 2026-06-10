@@ -1,0 +1,44 @@
+import copy
+import logging
+
+# 配置日志记录器
+logger = logging.getLogger(__name__)
+
+def transform_tokens(token_stream):
+    """
+    转换 markdown-it-py token 流，将 heading 类型的 token 内容转换为大写。
+    
+    :param token_stream: token 列表或可迭代对象
+    :return: 转换后的 token 列表
+    """
+    # 修复 2: 缺少空列表/None 输入验证
+    if not token_stream:
+        return []
+
+    result = []
+    
+    # 修复 4: 增加异常处理机制
+    try:
+        for i, token in enumerate(token_stream):
+            # 修复 1: 初始化 new_token，解决 else 分支未定义问题
+            # 默认直接引用原 token（避免对非目标 token 进行不必要的深拷贝操作提升性能）
+            new_token = token
+            
+            # 安全获取 type 属性，防止传入的 token 对象不符合预期格式
+            if getattr(token, 'type', None) == 'heading':
+                # 需要修改时，才进行深度拷贝，确保不污染原数据
+                new_token = copy.deepcopy(token)
+                
+                # 修复 3: 检查 content 是否存在且支持 upper 方法，防止 AttributeError
+                content = getattr(new_token, 'content', None)
+                if content and isinstance(content, str):
+                    new_token.content = content.upper()
+                    
+            result.append(new_token)
+            
+    except Exception as e:
+        # 记录异常信息，可以根据系统设计决定是忽略、部分返回还是向上抛出
+        logger.error(f"处理 token 流时发生异常 (索引 {i}): {e}")
+        raise RuntimeError(f"Token 转换失败: {e}") from e
+
+    return result
