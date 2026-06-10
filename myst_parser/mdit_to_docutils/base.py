@@ -1583,13 +1583,6 @@ class DocutilsRenderer(RendererProtocol):
         arguments = parts[1] if len(parts) > 1 else ""
 
         if name.startswith("{") and name.endswith("}"):
-            if token.content.startswith(":::"):
-                # the content starts with a nested fence block,
-                # but must distinguish between ``:options:``, so we add a new line
-                assert token.token is not None, '"colon_fence" must have a `token`'
-                linear_token = token.token.copy()
-                linear_token.content = "\n" + linear_token.content
-                token.token = linear_token
             return self.render_directive(token, name[1:-1], arguments)
 
         container = nodes.container(is_div=True)

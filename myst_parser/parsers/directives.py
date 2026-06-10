@@ -165,6 +165,19 @@ class _DirectiveOptions:
     has_options: bool
 
 
+_COLON_FENCE_RE = re.compile(r"^:{2,}")
+
+
+def _is_colon_fence_line(line: str) -> bool:
+    """Check if a line is a colon fence (opening or closing) or a double-colon line.
+
+    A colon fence starts with 2 or more colons (e.g. ``:::``, ``::::{name}``).
+    A valid directive option line starts with exactly one colon (e.g. ``:key: value``).
+    Lines starting with ``::`` are never valid option lines.
+    """
+    return bool(_COLON_FENCE_RE.match(line.lstrip()))
+
+
 def _parse_directive_options(
     content: str,
     directive_class: type[Directive],
@@ -188,17 +201,17 @@ def _parse_directive_options(
             options_block = content
             content = ""
         options_block = dedent(options_block)
-    elif content.lstrip().startswith(":"):
+    elif content.lstrip().startswith(":") and not _is_colon_fence_line(
+        content.lstrip().splitlines()[0] if content.lstrip() else ""
+    ):
         content_lines = content.splitlines()
         yaml_lines = []
         while content_lines:
             stripped = content_lines[0].lstrip()
-            # Stop at lines that don't start with a colon or have 3+ colons, which are colon fences
-            # (e.g. nested directives like `::::{other}`)
-            if not stripped.startswith(":") or stripped.startswith(":::"):
+            if not stripped.startswith(":") or _is_colon_fence_line(stripped):
                 break
             yaml_lines.append(content_lines.pop(0).lstrip()[1:])
-        options_block = "\n".join(yaml_lines)
+        options_block = "\n".join(yaml_lines) if yaml_lines else None
         content = "\n".join(content_lines)
 
     has_options_block = options_block is not None
