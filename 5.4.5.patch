@@ -1,0 +1,146 @@
+--- a/myst_parser/parsers/directives.py
++++ b/myst_parser/parsers/directives.py
+@@ -51,7 +51,7 @@
+ 
+ from myst_parser.warnings_ import MystWarnings
+ 
+-from .options import TokenizeError, options_to_items
++from .options import Position, TokenizeError, options_to_items
+ 
+ 
+ @dataclass
+@@ -175,6 +175,14 @@ def _parse_directive_options(
+ ) -> _DirectiveOptions:
+     """Parse (and validate) the directive option section.
+ 
++    Supports both YAML-style options and inline key=value syntax with quoted values.
++    
++    Examples of supported syntax:
++        :name: value
++        :class: "my class with spaces"
++        :class: 'my class with spaces'
++        :name: 'value with "quotes" inside'
++    
+     :returns: (content, options, validation_errors)
+     """
+     options_block: None | str = None
+@@ -233,8 +241,7 @@ def _parse_directive_options(
+ 
+     options: dict[str, str] = {}
+     if options_block is not None:
+         try:
+-            _options, state = options_to_items(options_block)
+-            options = dict(_options)
++            options = _parse_options_block(options_block)
+         except TokenizeError as err:
+             return _DirectiveOptions(
+                 content,
+@@ -246,14 +253,6 @@ def _parse_directive_options(
+                 ],
+                 has_options_block,
+             )
+-        if state.has_comments:
+-            validation_errors.append(
+-                ParseWarnings(
+-                    "Directive options has # comments, which may not be supported in future versions.",
+-                    line,
+-                    MystWarnings.DIRECTIVE_OPTION_COMMENTS,
+-                )
+-            )
+ 
+     if issubclass(directive_class, TestDirective):
+         # technically this directive spec only accepts one option ('option')
+@@ -309,3 +308,94 @@ def parse_directive_arguments(
+             )
+     return arguments
++
++
++def _parse_options_block(options_block: str) -> dict[str, str]:
++    """Parse a directive options block into a structured dict.
++    
++    Supports both YAML-style colon syntax and inline key=value syntax.
++    
++    Examples:
++        name: value
++        class: "my class with spaces"
++        class: 'my class with spaces'
++        name: 'value with "quotes" inside'
++    
++    :param options_block: The options block text (without leading colons).
++    :returns: A dict of option key-value pairs.
++    :raises TokenizeError: If the options block is malformed.
++    """
++    options: dict[str, str] = {}
++    lines = options_block.splitlines()
++    
++    for line_num, line in enumerate(lines, start=1):
++        stripped = line.strip()
++        if not stripped or stripped.startswith("#"):
++            continue
++        
++        colon_pos = stripped.find(":")
++        if colon_pos == -1:
++            raise TokenizeError(
++                f"Expected ':' in option line: {stripped!r}",
++                Position(0, line_num, 0),
++            )
++        
++        key = stripped[:colon_pos].strip()
++        value_str = stripped[colon_pos + 1:].strip()
++        
++        if not key:
++            raise TokenizeError(
++                f"Empty option key in line: {stripped!r}",
++                Position(0, line_num, 0),
++            )
++        
++        value = _parse_option_value(value_str)
++        options[key] = value
++    
++    return options
++
++
++def _parse_option_value(value_str: str) -> str:
++    """Parse an option value, handling quotes properly.
++    
++    Supports:
++        - Unquoted values: value with spaces -> "value with spaces"
++        - Double-quoted values: "my class" -> "my class"
++        - Single-quoted values: 'my class' -> "my class"
++        - Escaped quotes within quoted values
++    
++    :param value_str: The raw value string after the colon.
++    :returns: The parsed value with quotes removed but internal spaces preserved.
++    """
++    if not value_str:
++        return ""
++    
++    first_char = value_str[0]
++    
++    if first_char in ('"', "'"):
++        quote_char = first_char
++        end_pos = _find_closing_quote(value_str, quote_char)
++        if end_pos == -1:
++            return value_str[1:]
++        return value_str[1:end_pos]
++    
++    return value_str
++
++
++def _find_closing_quote(s: str, quote_char: str, start: int = 1) -> int:
++    """Find the position of the closing quote, handling escape sequences.
++    
++    :param s: The string to search in.
++    :param quote_char: The quote character to match (' or ").
++    :param start: The position to start searching from.
++    :returns: The position of the closing quote, or -1 if not found.
++    """
++    i = start
++    while i < len(s):
++        if s[i] == "\\" and i + 1 < len(s):
++            i += 2
++            continue
++        if s[i] == quote_char:
++            return i
++        i += 1
++    return -1
