@@ -40,7 +40,7 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from textwrap import dedent
-from typing import Any
+from typing import Any, Final
 
 import yaml
 from docutils.parsers.rst import Directive
@@ -51,6 +51,11 @@ from docutils.parsers.rst.states import MarkupError
 from myst_parser.warnings_ import MystWarnings
 
 from .options import TokenizeError, options_to_items
+
+# Matches lines that start with 3+ consecutive colons (colon fence markers),
+# e.g. ``:::``, ``::::``, ``:::{note}``, ``::::name``.
+# Used to stop option parsing when encountering a nested colon-fence directive.
+_COLON_FENCE_RE: Final[re.Pattern[str]] = re.compile(r"^:{3,}")
 
 
 @dataclass
@@ -191,11 +196,26 @@ def _parse_directive_options(
     elif content.lstrip().startswith(":"):
         content_lines = content.splitlines()
         yaml_lines = []
+        # Skip leading blank lines. This is important because ``render_colon_fence``
+        # inserts a leading ``\n`` when content starts with ``:::`` to disambiguate
+        # nested colon fences from ``:option:`` lines, so the first line may be empty.
+        while content_lines and not content_lines[0].strip():
+            content_lines.pop(0)
         while content_lines:
             stripped = content_lines[0].lstrip()
-            # Stop at lines that don't start with a colon or have 3+ colons, which are colon fences
-            # (e.g. nested directives like `::::{other}`)
-            if not stripped.startswith(":") or stripped.startswith(":::"):
+            # Stop at a colon fence (3+ consecutive colons at the start),
+            # which marks a nested directive or fenced block.
+            if _COLON_FENCE_RE.match(stripped):
+                break
+            # Stop at lines that don't start with a colon (regular body content).
+            if not stripped.startswith(":"):
+                break
+            # Stop at ``::xxx`` (double-colon prefix, not a fence) as it is
+            # not a valid ``:key: value`` option line, preventing greedy
+            # absorption of non-option content.
+            # Note: 3+ colons were already caught by the fence check above,
+            # so at this point ``startswith("::")`` means exactly 2 colons.
+            if stripped.startswith("::"):
                 break
             yaml_lines.append(content_lines.pop(0).lstrip()[1:])
         options_block = "\n".join(yaml_lines)
