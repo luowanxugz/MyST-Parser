@@ -1,0 +1,35 @@
+import copy
+from collections.abc import Iterable
+
+
+def transform_tokens(token_stream):
+    if token_stream is None:
+        return []
+
+    if not isinstance(token_stream, Iterable) or isinstance(token_stream, (str, bytes)):
+        raise TypeError("token_stream must be an iterable of token objects")
+
+    tokens = list(token_stream)
+    if not tokens:
+        return []
+
+    result = []
+
+    for index, token in enumerate(tokens):
+        try:
+            new_token = copy.deepcopy(token)
+
+            if getattr(token, "type", None) == "heading":
+                content = getattr(token, "content", "")
+                if content is None:
+                    new_token.content = ""
+                elif isinstance(content, str):
+                    new_token.content = content.upper()
+                else:
+                    new_token.content = str(content).upper()
+
+            result.append(new_token)
+        except Exception as exc:
+            raise ValueError(f"failed to transform token at index {index}: {exc}") from exc
+
+    return result
